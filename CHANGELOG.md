@@ -12,10 +12,15 @@ of the tool. The schema-versioning contract is documented in `docs/schema.md`
 ## [Unreleased]
 
 ### Added
+
 ### Changed
+
 ### Deprecated
+
 ### Removed
+
 ### Fixed
+
 ### Security
 
 [Unreleased]: https://github.com/polyglotdev/copyfail-validation/compare/v0.1.0...HEAD
