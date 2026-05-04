@@ -48,14 +48,19 @@ jobs:
           cache: true
       - uses: golangci/golangci-lint-action@v6
         with:
-          # install-mode: goinstall builds golangci-lint from source using
-          # this workflow's Go 1.26.x toolchain. The default binary install
-          # ships a binary that the action's release process built with an
-          # older Go (1.24 as of 2026-05-04) — which then refuses to load
-          # our v2-schema .golangci.yml because the file targets Go 1.26.2.
-          # goinstall is slower (~30s) but immune to Go-version skew.
-          install-mode: goinstall
-          version: latest
+          # Pin the exact version we use locally so the config schema and
+          # the linter rule set are byte-identical between dev and CI.
+          #
+          # Why pinned (not "latest"):
+          #   - "latest" with the default binary install resolved to v1.64.8
+          #     (built with Go 1.24, refused our Go-1.26.2 module).
+          #   - "latest" with install-mode: goinstall resolved to the latest
+          #     v1.x release because v2.x lives at the /v2 import path
+          #     (Go semantic-import-versioning rule for v2+).
+          # Pinning v2.11.4 sidesteps both issues: it is a v2-schema-aware
+          # build compiled with Go 1.26.x, downloaded directly from the
+          # GitHub releases page.
+          version: v2.11.4
 
   vuln:
     name: govulncheck
