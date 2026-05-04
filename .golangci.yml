@@ -1,0 +1,91 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - depguard
+    - errcheck
+    - gocritic
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - revive
+    - staticcheck
+    - unused
+    - unparam
+
+  settings:
+    depguard:
+      rules:
+        report-is-leaf:
+          # report/ MUST NOT import anything from this module.
+          # See: docs/superpowers/specs/2026-05-04-copyfail-validation-design.md §3 (Design Principles, rule 3).
+          files:
+            - "**/report/**/*.go"
+            - "!**/report/**/*_test.go"
+          deny:
+            - pkg: github.com/polyglotdev/copyfail-validation/check
+              desc: "report is the leaf of the dependency graph; check imports report, never the reverse"
+            - pkg: github.com/polyglotdev/copyfail-validation/preset
+              desc: "report is the leaf of the dependency graph; preset imports report, never the reverse"
+            - pkg: github.com/polyglotdev/copyfail-validation/internal
+              desc: "report must not import any internal/* package"
+            - pkg: github.com/polyglotdev/copyfail-validation/cmd
+              desc: "report must not import the CLI"
+        check-imports-only-report:
+          files:
+            - "**/check/**/*.go"
+            - "!**/check/**/*_test.go"
+          deny:
+            - pkg: github.com/polyglotdev/copyfail-validation/preset
+              desc: "check must not depend on any concrete preset; presets depend on check"
+            - pkg: github.com/polyglotdev/copyfail-validation/cmd
+              desc: "check must not depend on the CLI"
+    gosec:
+      severity: medium
+      confidence: medium
+      excludes:
+        - G204
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: var-naming
+        - name: error-return
+        - name: error-naming
+        - name: error-strings
+        - name: receiver-naming
+    govet:
+      enable-all: true
+    misspell:
+      locale: US
+    unparam:
+      check-exported: true
+
+  # The legacy single-file validator at module root is slated for deletion in
+  # Phase 6 (Task 6.4) once the structured implementation lands. It is excluded
+  # from lint here so the Phase 0 baseline is green; the exclusion entry is
+  # removed in Task 6.4 along with the file.
+  exclusions:
+    paths:
+      - "^copyfail_validator\\.go$"
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/polyglotdev/copyfail-validation
