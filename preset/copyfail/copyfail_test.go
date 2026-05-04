@@ -26,6 +26,7 @@ import (
 var expectedRequiredCheckIDs = []string{
 	"modprobe.conf_present",
 	"modprobe.conf_correct",
+	"modprobe.dry_run",
 }
 
 // TestCVEConstantIsCorrect pins the CVE identifier the package

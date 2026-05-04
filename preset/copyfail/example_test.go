@@ -74,7 +74,7 @@ func ExampleAll() {
 	fmt.Println("first check ID:", checks[0].ID())
 	fmt.Println("second check ID:", checks[1].ID())
 	// Output:
-	// required check count: 2
+	// required check count: 3
 	// first check ID: modprobe.conf_present
 	// second check ID: modprobe.conf_correct
 }
@@ -93,6 +93,7 @@ func ExampleAllWithOptions() {
 	// Output:
 	// modprobe.conf_present
 	// modprobe.conf_correct
+	// modprobe.dry_run
 }
 
 // Example_modprobeConfPresent shows the conf-present check on a real
@@ -159,4 +160,31 @@ func Example_modprobeConfCorrect() {
 	// state: pass
 	// install_target: /bin/false
 	// blacklisted: true
+}
+
+// Example_modprobeDryRun shows the dry-run check driven by a
+// FakeRunner. The runner returns the canonical
+// "install /bin/false \n" stdout that a hardened host's modprobe -n -v
+// would produce; the check classifies the resolution as blocked.
+func Example_modprobeDryRun() {
+	runner := &exec.FakeRunner{
+		Responses: map[string]exec.Result{
+			"modprobe -n -v algif_aead": {Stdout: []byte("install /bin/false \n")},
+		},
+	}
+
+	opts := copyfail.Options{Runner: runner}
+	for _, c := range copyfail.AllWithOptions(opts) {
+		if c.ID() != "modprobe.dry_run" {
+			continue
+		}
+		res := c.Run(context.Background())
+		fmt.Println("state:", res.State)
+		fmt.Println("blocked:", res.Evidence["blocked"])
+		fmt.Println("resolved_to:", res.Evidence["resolved_to"])
+	}
+	// Output:
+	// state: pass
+	// blocked: true
+	// resolved_to: install /bin/false
 }
