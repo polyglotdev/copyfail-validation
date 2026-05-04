@@ -4,8 +4,10 @@
 package exec_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/polyglotdev/copyfail-validation/internal/exec"
 )
@@ -68,4 +70,83 @@ func ExampleValidate_untrusted() {
 	// safe: ok
 	// metachar: rejected
 	// flag: rejected
+}
+
+// ExampleCmd shows the canonical Cmd construction: a logical Name
+// (resolved through the allowlist), a typed Args slice mixing fixed
+// flag constants (Trusted) and user-controlled values (Untrusted),
+// and an explicit Timeout. The example does not invoke a Runner — it
+// only documents the Cmd shape callers populate.
+func ExampleCmd() {
+	cmd := exec.Cmd{
+		Name: "rpm",
+		Args: []exec.Arg{
+			exec.Trusted("-V"),
+			exec.Untrusted("coreutils"),
+		},
+		Timeout: 10 * time.Second,
+	}
+	fmt.Println(cmd.Name, len(cmd.Args), cmd.Timeout)
+	// Output:
+	// rpm 2 10s
+}
+
+// ExampleNewOSRunner shows obtaining the production Runner. Production
+// callers wire NewOSRunner once at startup and pass the Runner down
+// through constructors, so test wiring (FakeRunner) can be substituted
+// for unit testing of higher layers.
+func ExampleNewOSRunner() {
+	r := exec.NewOSRunner()
+	if r == nil {
+		fmt.Println("nil")
+		return
+	}
+	fmt.Println("runner")
+	// Output:
+	// runner
+}
+
+// ExampleFakeRunner shows the canonical FakeRunner usage for unit
+// tests of higher layers. Each entry in Responses is keyed by
+// `Name + " " + each Arg.String() joined by space`, which is the same
+// shape the production Runner sees; tests that build keys with this
+// shape can drop in canned outputs without spawning a real subprocess.
+func ExampleFakeRunner() {
+	r := &exec.FakeRunner{
+		Responses: map[string]exec.Result{
+			"uname -r": {Stdout: []byte("6.1.0\n"), ExitCode: 0},
+		},
+	}
+	res, err := r.Run(context.Background(), exec.Cmd{
+		Name: "uname",
+		Args: []exec.Arg{exec.Trusted("-r")},
+	})
+	if err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+	fmt.Printf("stdout=%q exit=%d calls=%d\n", string(res.Stdout), res.ExitCode, len(r.Calls))
+	// Output:
+	// stdout="6.1.0\n" exit=0 calls=1
+}
+
+// ExampleNewRunnerForTest shows how internal-package tests drive the
+// TestHelperProcess pattern: argv0 is the test binary, the prefix
+// pre-pends the helper run flag and the "--" arg separator, and env
+// carries the helper's behavior knobs. NOT for production use; the
+// production constructor is NewOSRunner.
+func ExampleNewRunnerForTest() {
+	// Real tests pass os.Args[0] here; we use a placeholder for the
+	// godoc example. This example does NOT invoke Run — it only
+	// documents the constructor shape.
+	r := exec.NewRunnerForTest(
+		"/path/to/test/binary",
+		[]string{"-test.run=TestHelperProcess", "--"},
+		[]string{"GO_WANT_HELPER_PROCESS=1"},
+	)
+	if r != nil {
+		fmt.Println("ok")
+	}
+	// Output:
+	// ok
 }
