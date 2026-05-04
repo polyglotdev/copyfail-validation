@@ -31,7 +31,3 @@ memory.md
 
 # Go vendor directory
 /vendor/
-
-# Legacy prototype (renamed from .go to .go.legacy in Phase 1 to silence
-# IDE Go-language diagnostics; deleted in Phase 6 task 6.4).
-/copyfail_validator.go.legacy
