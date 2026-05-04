@@ -1,0 +1,67 @@
+{
+  "generated_at": "2026-05-04T12:00:00Z",
+  "host": {
+    "hostname": "test-host",
+    "kernel_release": "6.10.0",
+    "os_release": "ubuntu",
+    "os_version_id": "24.04",
+    "arch": "amd64"
+  },
+  "tool": {
+    "name": "copyfail-validate",
+    "version": "v0.1.0",
+    "commit": "abc1234",
+    "build_date": "2026-05-04T00:00:00Z"
+  },
+  "schema_version": "1.0.0",
+  "results": [
+    {
+      "started_at": "2026-05-04T12:00:00Z",
+      "check_id": "modprobe.dry_run",
+      "title": "modprobe dry run resolves to /bin/false",
+      "state": "pass",
+      "severity": "required",
+      "detail": "modprobe -nv copyfail returns /bin/false",
+      "duration_ms": 18
+    },
+    {
+      "started_at": "2026-05-04T12:00:00Z",
+      "check_id": "kernel.modules_loaded",
+      "title": "no copyfail modules loaded",
+      "state": "fail",
+      "severity": "required",
+      "detail": "found 1 loaded module: copyfail",
+      "duration_ms": 4
+    },
+    {
+      "started_at": "2026-05-04T12:00:00Z",
+      "check_id": "afalg.procscan",
+      "title": "no AF_ALG family in /proc/\u003cpid\u003e/maps",
+      "state": "skip",
+      "severity": "advisory",
+      "detail": "skipped: not running as root",
+      "duration_ms": 1
+    },
+    {
+      "started_at": "2026-05-04T12:00:00Z",
+      "check_id": "integrity.copyfail_pkg",
+      "title": "copyfail package not installed",
+      "state": "error",
+      "severity": "required",
+      "error": "rpm: command not found",
+      "duration_ms": 12
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "pass": 1,
+    "fail": 1,
+    "skip": 1,
+    "error": 1,
+    "required": {
+      "pass": 1,
+      "fail": 1,
+      "error": 1
+    }
+  }
+}

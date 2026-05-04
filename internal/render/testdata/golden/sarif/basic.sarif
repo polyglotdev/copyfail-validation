@@ -1,0 +1,107 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/cos02/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "copyfail-validate",
+          "version": "v0.1.0",
+          "informationUri": "https://github.com/polyglotdev/copyfail-validation",
+          "rules": [
+            {
+              "id": "afalg.procscan",
+              "name": "no AF_ALG family in /proc/\u003cpid\u003e/maps",
+              "shortDescription": {
+                "text": "no AF_ALG family in /proc/\u003cpid\u003e/maps"
+              },
+              "fullDescription": {
+                "text": "no AF_ALG family in /proc/\u003cpid\u003e/maps"
+              },
+              "help": {
+                "text": "no AF_ALG family in /proc/\u003cpid\u003e/maps"
+              }
+            },
+            {
+              "id": "integrity.copyfail_pkg",
+              "name": "copyfail package not installed",
+              "shortDescription": {
+                "text": "copyfail package not installed"
+              },
+              "fullDescription": {
+                "text": "copyfail package not installed"
+              },
+              "help": {
+                "text": "copyfail package not installed"
+              }
+            },
+            {
+              "id": "kernel.modules_loaded",
+              "name": "no copyfail modules loaded",
+              "shortDescription": {
+                "text": "no copyfail modules loaded"
+              },
+              "fullDescription": {
+                "text": "no copyfail modules loaded"
+              },
+              "help": {
+                "text": "no copyfail modules loaded"
+              }
+            },
+            {
+              "id": "modprobe.dry_run",
+              "name": "modprobe dry run resolves to /bin/false",
+              "shortDescription": {
+                "text": "modprobe dry run resolves to /bin/false"
+              },
+              "fullDescription": {
+                "text": "modprobe dry run resolves to /bin/false"
+              },
+              "help": {
+                "text": "modprobe dry run resolves to /bin/false"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "message": {
+            "text": "modprobe -nv copyfail returns /bin/false"
+          },
+          "ruleId": "modprobe.dry_run",
+          "kind": "pass"
+        },
+        {
+          "message": {
+            "text": "found 1 loaded module: copyfail"
+          },
+          "ruleId": "kernel.modules_loaded",
+          "kind": "fail",
+          "level": "error"
+        },
+        {
+          "message": {
+            "text": "skipped: not running as root"
+          },
+          "ruleId": "afalg.procscan",
+          "kind": "notApplicable"
+        },
+        {
+          "message": {
+            "text": "rpm: command not found"
+          },
+          "ruleId": "integrity.copyfail_pkg",
+          "kind": "open"
+        }
+      ],
+      "invocations": [
+        {
+          "startTimeUtc": "2026-05-04T12:00:00Z",
+          "machine": "test-host",
+          "executionSuccessful": false
+        }
+      ]
+    }
+  ]
+}

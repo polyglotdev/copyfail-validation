@@ -1,0 +1,44 @@
+# HELP copyfail_validator_check_state Result of one mitigation check (1 = current state).
+# TYPE copyfail_validator_check_state gauge
+copyfail_validator_check_state{check_id="afalg.procscan",severity="advisory",state="pass"} 0
+copyfail_validator_check_state{check_id="afalg.procscan",severity="advisory",state="fail"} 0
+copyfail_validator_check_state{check_id="afalg.procscan",severity="advisory",state="skip"} 1
+copyfail_validator_check_state{check_id="afalg.procscan",severity="advisory",state="error"} 0
+copyfail_validator_check_state{check_id="integrity.copyfail_pkg",severity="required",state="pass"} 0
+copyfail_validator_check_state{check_id="integrity.copyfail_pkg",severity="required",state="fail"} 0
+copyfail_validator_check_state{check_id="integrity.copyfail_pkg",severity="required",state="skip"} 0
+copyfail_validator_check_state{check_id="integrity.copyfail_pkg",severity="required",state="error"} 1
+copyfail_validator_check_state{check_id="kernel.modules_loaded",severity="required",state="pass"} 0
+copyfail_validator_check_state{check_id="kernel.modules_loaded",severity="required",state="fail"} 1
+copyfail_validator_check_state{check_id="kernel.modules_loaded",severity="required",state="skip"} 0
+copyfail_validator_check_state{check_id="kernel.modules_loaded",severity="required",state="error"} 0
+copyfail_validator_check_state{check_id="modprobe.dry_run",severity="required",state="pass"} 1
+copyfail_validator_check_state{check_id="modprobe.dry_run",severity="required",state="fail"} 0
+copyfail_validator_check_state{check_id="modprobe.dry_run",severity="required",state="skip"} 0
+copyfail_validator_check_state{check_id="modprobe.dry_run",severity="required",state="error"} 0
+
+# HELP copyfail_validator_check_duration_seconds Time spent running each check.
+# TYPE copyfail_validator_check_duration_seconds gauge
+copyfail_validator_check_duration_seconds{check_id="afalg.procscan"} 0.001
+copyfail_validator_check_duration_seconds{check_id="integrity.copyfail_pkg"} 0.012
+copyfail_validator_check_duration_seconds{check_id="kernel.modules_loaded"} 0.004
+copyfail_validator_check_duration_seconds{check_id="modprobe.dry_run"} 0.018
+
+# HELP copyfail_validator_summary Summary of last validation run.
+# TYPE copyfail_validator_summary gauge
+copyfail_validator_summary{outcome="pass"} 1
+copyfail_validator_summary{outcome="fail"} 1
+copyfail_validator_summary{outcome="skip"} 1
+copyfail_validator_summary{outcome="error"} 1
+
+# HELP copyfail_validator_required_failures Required-check failures (drives paging).
+# TYPE copyfail_validator_required_failures gauge
+copyfail_validator_required_failures 1
+
+# HELP copyfail_validator_last_run_timestamp_seconds Unix time of last successful run.
+# TYPE copyfail_validator_last_run_timestamp_seconds gauge
+copyfail_validator_last_run_timestamp_seconds 1777896000
+
+# HELP copyfail_validator_build_info Build info as labels (value always 1).
+# TYPE copyfail_validator_build_info gauge
+copyfail_validator_build_info{version="v0.1.0",commit="abc1234",go_version="go1.26.2"} 1

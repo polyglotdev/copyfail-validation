@@ -1,0 +1,6 @@
+OK     modprobe.dry_run (required): modprobe -nv copyfail returns /bin/false
+FAIL   kernel.modules_loaded (required): found 1 loaded module: copyfail
+SKIP   afalg.procscan (advisory): skipped: not running as root
+ERROR  integrity.copyfail_pkg (required): rpm: command not found
+validator result: FAIL
+total: 4 pass=1 fail=1 skip=1 error=1 (required: pass=1 fail=1 error=1)
