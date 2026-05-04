@@ -1,0 +1,23 @@
+# Binaries
+/copyfail-validate
+/cmd/copyfail-validate/copyfail-validate
+/dist/
+*.exe
+
+# Test artifacts
+/cover.out
+/cover.html
+*.test
+*.prof
+*.pprof
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Go workspace files (project uses go.mod, not workspace)
+go.work
+go.work.sum
