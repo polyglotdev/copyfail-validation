@@ -28,3 +28,6 @@ MEMORY.md
 memory.md
 .claude/
 .claude-*/
+
+# Go vendor directory
+/vendor/
