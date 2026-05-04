@@ -4,10 +4,12 @@
 package kernelmod_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/polyglotdev/copyfail-validation/internal/exec"
 	"github.com/polyglotdev/copyfail-validation/internal/kernelmod"
 )
 
@@ -156,4 +158,58 @@ func ExampleIsBlacklisted() {
 	// true
 	// false
 	// false
+}
+
+// ExampleDryRunModule shows the typical "is this module blocked?"
+// flow using a FakeRunner: register the canned `modprobe -n -v algif_aead`
+// output that a host with a `install algif_aead /bin/false` directive
+// would produce, invoke DryRunModule, and inspect the parsed result.
+// Production callers wire NewOSRunner from internal/exec instead — the
+// FakeRunner is only used here so the example is hermetic and godoc
+// can verify exact output bytes.
+func ExampleDryRunModule() {
+	runner := &exec.FakeRunner{
+		Responses: map[string]exec.Result{
+			"modprobe -n -v algif_aead": {
+				Stdout:   []byte("install /bin/false \n"),
+				ExitCode: 0,
+			},
+		},
+	}
+
+	dry, err := kernelmod.DryRunModule(context.Background(), runner, "algif_aead")
+	if err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+
+	fmt.Printf("resolved=%q blocked=%v\n", dry.ResolvedTo, dry.Blocked)
+	// Output:
+	// resolved="install /bin/false" blocked=true
+}
+
+// ExampleDryRunModule_loadable shows the inverse case: the module is
+// loadable (no install directive blocks it), so modprobe -n -v emits
+// an `insmod /lib/modules/.../algif_aead.ko` line. ResolvedTo holds
+// the trimmed first line and Blocked is false because the canonical
+// "install /bin/false" target was not the resolution.
+func ExampleDryRunModule_loadable() {
+	runner := &exec.FakeRunner{
+		Responses: map[string]exec.Result{
+			"modprobe -n -v algif_aead": {
+				Stdout:   []byte("insmod /lib/modules/6.1.0-amzn2023/kernel/crypto/algif_aead.ko \n"),
+				ExitCode: 0,
+			},
+		},
+	}
+
+	dry, err := kernelmod.DryRunModule(context.Background(), runner, "algif_aead")
+	if err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+
+	fmt.Printf("resolved=%q blocked=%v\n", dry.ResolvedTo, dry.Blocked)
+	// Output:
+	// resolved="insmod /lib/modules/6.1.0-amzn2023/kernel/crypto/algif_aead.ko" blocked=false
 }
