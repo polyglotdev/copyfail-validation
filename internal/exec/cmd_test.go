@@ -312,3 +312,42 @@ func TestCmd_Run_TruncatesOversizedStderr(t *testing.T) {
 		t.Errorf("len(Stderr) = %d, want %d (MaxOutput)", len(res.Stderr), exec.MaxOutput)
 	}
 }
+
+// TestCmd_Run_TruncatedAndExitNonzero is the regression test for the
+// case where a subprocess BOTH overflows the output cap AND exits
+// non-zero. The error returned by Run uses errors.Join so callers
+// using errors.Is can detect each condition independently:
+//
+//   - errors.Is(err, ErrOutputTruncated) → true
+//   - the wrapped *exec.ExitError remains reachable via errors.As
+//
+// Before the fix, the exit error was returned alone and the truncation
+// sentinel was silently shadowed; operators only saw Result.Truncated by
+// inspecting the Result manually, contradicting the godoc on
+// ErrOutputTruncated which says callers can use the sentinel "instead
+// of inspecting the Result first".
+func TestCmd_Run_TruncatedAndExitNonzero(t *testing.T) {
+	t.Parallel()
+	const want = 2 * exec.MaxOutput
+	r := helperRunner(t, "flood-stderr-then-exit-2", "", "GO_HELPER_BYTES="+strconv.Itoa(want))
+	res, err := r.Run(context.Background(), exec.Cmd{
+		Name:    "uname",
+		Args:    []exec.Arg{},
+		Timeout: 30 * time.Second,
+	})
+	if err == nil {
+		t.Fatal("err = nil, want a joined error covering both truncation and exit-2")
+	}
+	if !errors.Is(err, exec.ErrOutputTruncated) {
+		t.Errorf("errors.Is(err, ErrOutputTruncated) = false, want true (sentinel must survive the exit-error wrap)")
+	}
+	if !res.Truncated {
+		t.Errorf("Truncated = false, want true")
+	}
+	if res.ExitCode != 2 {
+		t.Errorf("ExitCode = %d, want 2 (the helper exits 2 after the flood)", res.ExitCode)
+	}
+	if len(res.Stderr) != exec.MaxOutput {
+		t.Errorf("len(Stderr) = %d, want %d (MaxOutput)", len(res.Stderr), exec.MaxOutput)
+	}
+}

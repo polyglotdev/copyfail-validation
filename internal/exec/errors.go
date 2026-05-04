@@ -34,5 +34,12 @@ var (
 	// Result.Truncated = true) when stdout or stderr exceeded MaxOutput
 	// bytes. The truncated bytes are still in the Result so callers can
 	// inspect what was captured before the cap was hit.
+	//
+	// When a subprocess BOTH truncates output AND exits non-zero, the
+	// returned error is errors.Join(ErrOutputTruncated, <wrapped exit error>)
+	// so callers using errors.Is detect each condition independently.
+	// Without the join, the truncation sentinel would be silently shadowed
+	// by the exit error, breaking the contract above (callers should be
+	// able to use errors.Is instead of inspecting the Result).
 	ErrOutputTruncated = errors.New("exec: output truncated")
 )

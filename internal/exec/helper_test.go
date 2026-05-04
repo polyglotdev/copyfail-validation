@@ -39,6 +39,12 @@ import (
 //     time.Sleep is goroutine-safe and triggers no deadlock check.
 //   - "flood-stdout": write GO_HELPER_BYTES bytes of 'x' to stdout.
 //   - "flood-stderr": write GO_HELPER_BYTES bytes of 'y' to stderr.
+//   - "flood-stderr-then-exit-2": write GO_HELPER_BYTES bytes of 'y' to
+//     stderr, then exit 2. Used to verify that when output truncation
+//     and a non-zero exit occur together, BOTH ErrOutputTruncated AND
+//     the wrapped exec error are reachable via errors.Is on the returned
+//     error (regression test for the issue where the truncation sentinel
+//     was silently shadowed by the exit error).
 //   - "echo-args": print os.Args[1:] joined by '|', exit 0. Used to
 //     verify args reach the subprocess byte-exact (no quoting or
 //     mangling by the wrapper).
@@ -62,6 +68,9 @@ func TestHelperProcess(_ *testing.T) {
 		flood(os.Stdout, 'x')
 	case "flood-stderr":
 		flood(os.Stderr, 'y')
+	case "flood-stderr-then-exit-2":
+		flood(os.Stderr, 'y')
+		os.Exit(2)
 	case "echo-args":
 		// os.Args layout: [helper-binary, -test.run=..., --, <user args>...]
 		// The "--" separator is supplied by NewRunnerForTest; everything

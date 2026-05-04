@@ -203,10 +203,14 @@ func runProcess(parent context.Context, path string, args, env []string, timeout
 	runErr := c.Run()
 	dur := time.Since(start)
 
+	// Detach the captured bytes from the cappedBuffer's internal slice
+	// so callers may freely mutate Result.Stdout / Result.Stderr without
+	// aliasing back into the now-orphaned buffer (and so a future
+	// cappedBuffer pool refactor cannot silently introduce a data race).
 	res := Result{
 		Path:      path,
-		Stdout:    stdout.bytes,
-		Stderr:    stderr.bytes,
+		Stdout:    append([]byte(nil), stdout.bytes...),
+		Stderr:    append([]byte(nil), stderr.bytes...),
 		Duration:  dur,
 		Truncated: stdout.truncated || stderr.truncated,
 		ExitCode:  -1,
@@ -222,8 +226,20 @@ func runProcess(parent context.Context, path string, args, env []string, timeout
 		return res, fmt.Errorf("%w: after %s", ErrTimeout, dur)
 	}
 
+	// When a subprocess BOTH truncates output AND exits non-zero, the
+	// caller needs to be able to detect both conditions via errors.Is.
+	// errors.Join (Go 1.20+) lets us return a multi-error so that
+	//   errors.Is(err, ErrOutputTruncated)  AND
+	//   errors.Is(err, &exec.ExitError{...})
+	// both succeed. Without this, the truncation sentinel would be
+	// silently shadowed by the exit error and operators would only
+	// see Result.Truncated by inspecting the Result manually.
 	if runErr != nil {
-		return res, fmt.Errorf("exec %s: %w", path, runErr)
+		wrapped := fmt.Errorf("exec %s: %w", path, runErr)
+		if res.Truncated {
+			return res, errors.Join(ErrOutputTruncated, wrapped)
+		}
+		return res, wrapped
 	}
 
 	if res.Truncated {
