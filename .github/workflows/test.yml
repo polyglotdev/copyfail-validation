@@ -1,0 +1,62 @@
+name: test
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }} / go ${{ matrix.go }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-22.04]
+        go: ["1.26.x"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+      - run: go mod download
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+      - name: SPDX license header check
+        run: |
+          MISSING=$(find . -name '*.go' -not -path './vendor/*' \
+            -exec sh -c 'head -2 "$1" | grep -q "SPDX-License-Identifier: Apache-2.0" || echo "$1"' _ {} \;)
+          if [ -n "$MISSING" ]; then
+            echo "Missing SPDX header in:"
+            echo "$MISSING"
+            exit 1
+          fi
+
+  lint:
+    name: lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+          cache: true
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+  vuln:
+    name: govulncheck
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+          cache: true
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
