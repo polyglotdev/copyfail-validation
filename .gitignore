@@ -21,3 +21,10 @@
 # Go workspace files (project uses go.mod, not workspace)
 go.work
 go.work.sum
+
+# Local AI / agent state — not for the repo
+CLAUDE.md
+MEMORY.md
+memory.md
+.claude/
+.claude-*/

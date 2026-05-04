@@ -44,37 +44,43 @@ The tool is **defensive only**: it never attempts exploitation, never modifies h
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │  check (public)                                                     │
-│   ├─ type Check interface { Name, Description, Required,            │
-│   │                          Applicable(ctx) bool, Run(ctx) Result }│
-│   ├─ type Result { Name, State, Required, Detail, Evidence, … }     │
-│   ├─ type State enum { Pass, Fail, Skip, Error }                    │
-│   └─ Runner.Run(ctx, []Check) → Report                              │
+│   ├─ type Check interface { ID, Title, Description, Severity,       │
+│   │                          Applicable(ctx) (bool,string),         │
+│   │                          Run(ctx) report.Result }               │
+│   └─ Runner.Run(ctx, []Check) → report.Report                       │
 └─────────────────────────────────────────────────────────────────────┘
                                 │
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │  internal/  (private, refactor-freely)                              │
-│   ├─ exec/      safe subprocess wrappers (no shell, allowlists)     │
-│   ├─ kernelmod/ modprobe -nv, lsmod, /proc/modules parsing          │
+│   ├─ exec/      safe subprocess wrappers (no shell, Trusted args)   │
+│   ├─ kernelmod/ modprobe -nv, /proc/modules, /etc/modprobe.d parser │
+│   ├─ procscan/  /proc/<pid>/{fd,maps,comm} scanner (afalg users)    │
 │   ├─ integrity/ pkgmgr interface; rpm.go + dpkg.go backends         │
+│   ├─ redact/    secret-pattern redactor for Evidence/Detail         │
+│   ├─ canonjson/ RFC 8785 (JCS) canonicalizer for --sign sidecar     │
 │   └─ render/    human/json/sarif/prom marshalers                    │
 └─────────────────────────────────────────────────────────────────────┘
                                 │
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  report (public)                                                    │
-│   └─ type Report { Host, Schema, Generated, Results, Summary }      │
-│      with format constants + render.To(w, format) entry point       │
+│  report (public, LEAF — imports nothing in this module)             │
+│   ├─ type State enum { Pass, Fail, Skip, Error }                    │
+│   ├─ type Severity enum { Required, Advisory }                      │
+│   ├─ type Result { CheckID, State, Severity, Detail, Evidence, … } │
+│   └─ type Report { Tool, Host, Generated, Results, Summary }        │
+│       + Format consts + WriteTo(w, Format)                          │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Design Principles
 
 1. **Library first, CLI second.** The CLI is a thin frontend (~30 LOC `main` + flag wiring). Everything testable lives in importable packages.
-2. **Public API minimalism.** Three public packages: `check`, `preset/copyfail`, `report`. Everything else is `internal/`. Refactor freely without breaking semver.
-3. **Open/closed via interfaces.** New presets (future CVEs) implement `check.Check` and live under `preset/<name>/`. No core changes needed.
-4. **Render-from-model.** One canonical `Report` struct → four format renderers. Adding a fifth format is a new file, not a refactor.
-5. **Pluggable distro backend.** `integrity/pkgmgr.go` defines the interface; `rpm.go` and `dpkg.go` implement it; runtime auto-detection picks the right one. Same pattern as `database/sql` drivers.
+2. **Public API minimalism.** Three public packages: `report` (data, leaf), `check` (behavior, imports `report`), `preset/copyfail` (the bundle, imports both). Everything else is `internal/`. Refactor freely without breaking semver.
+3. **One-directional package graph.** `report` is the leaf — it imports no other package in this module. `check` imports `report`. `preset/*` imports `check` and `report`. `internal/*` may import any public package and any other `internal/*`. Enforced in CI via `golangci-lint`'s `depguard` rule (`.golangci.yml`): a deny rule on the `report` package forbids importing `github.com/polyglotdev/copyfail-validation/check`, `…/preset/...`, or `…/internal/...`. The lint failure message points the offender to this section of the spec.
+4. **Open/closed via interfaces.** New presets (future CVEs) implement `check.Check` and live under `preset/<name>/`. No core changes needed.
+5. **Render-from-model.** One canonical `report.Report` struct → four format renderers. Adding a fifth format is a new file, not a refactor.
+6. **Pluggable distro backend.** `internal/integrity/pkgmgr.go` defines the interface; `rpm.go` and `dpkg.go` implement it; `Detect()` picks one at runtime. Same pattern as `database/sql` drivers.
 
 ### Non-goals (explicit YAGNI)
 
@@ -88,17 +94,20 @@ The tool is **defensive only**: it never attempts exploitation, never modifies h
 
 ```
 copyfail-validation/
-├── check/                        # public: Check interface, Result, State enum
+├── report/                       # public: Report, Result, State, Severity, Format (LEAF — imports nothing in this module)
+├── check/                        # public: Check interface, Runner (imports report)
 ├── preset/
-│   └── copyfail/                 # public: copyfail preset (the bundle)
-├── report/                       # public: Report struct + format constants
+│   └── copyfail/                 # public: copyfail.All() bundle (imports check + report)
 ├── internal/
-│   ├── exec/                     # safe exec wrappers (no shell, allowlists)
-│   ├── integrity/                # rpm + dpkg backends behind pkgmgr interface
-│   ├── kernelmod/                # modprobe, lsmod, /proc parsers
-│   ├── render/                   # human/json/sarif/prom marshalers
+│   ├── exec/                     # safe exec wrappers (no shell, allowlists, Trusted/Untrusted typing)
+│   ├── integrity/                # rpm + dpkg backends behind pkgmgr interface; Detect() chooses one
+│   ├── kernelmod/                # modprobe, lsmod, /proc/modules, /etc/modprobe.d/* parsers
+│   ├── procscan/                 # /proc/<pid>/{fd,maps,comm} scanner for afalg.no_active_users
+│   ├── render/                   # human/json/sarif/prom marshalers; one file per format
 │   ├── hostinfo/                 # /etc/os-release, uname, hostname
-│   ├── buildinfo/                # version/commit/build-date stamping
+│   ├── redact/                   # secret-pattern redactor used before any string lands in Evidence/Detail
+│   ├── buildinfo/                # version/commit/build-date stamping (set via -ldflags)
+│   ├── canonjson/                # RFC 8785 (JCS) canonicalizer for the --sign sidecar
 │   └── logging/                  # slog construction
 ├── cmd/
 │   └── copyfail-validate/        # the CLI binary
@@ -120,57 +129,48 @@ copyfail-validation/
 
 ## 4. Public API Surface
 
+### Package layering rule (avoids import cycle)
+
+**Data downstream, behavior upstream.** Value types (`State`, `Severity`, `Result`, `Report`, `Format`, `Summary`, etc.) live in `report`. Behavior types (`Check` interface, `Runner`) live in `check`. `check` imports `report`; `report` imports nothing in this module. This matches stdlib (`net/http` imports `net/url`, never the reverse) and eliminates the cycle a naive split would create.
+
 ### Package `check`
 
 ```go
-// Package check defines the Check interface and Result type used by all
-// AF_ALG-family hardening validators. Implementations live in the preset/*
-// packages; helpers live in internal/.
+// Package check defines the Check interface and the Runner that executes
+// a slice of Checks. Result data structures live in the report package
+// to keep this package's import graph one-directional.
 package check
 
-type State string
+import (
+    "context"
+    "log/slog"
+    "time"
 
-const (
-    StatePass  State = "pass"
-    StateFail  State = "fail"
-    StateSkip  State = "skip"
-    StateError State = "error"
+    "github.com/polyglotdev/copyfail-validation/report"
 )
 
-type Severity string
-
-const (
-    SeverityRequired Severity = "required"
-    SeverityAdvisory Severity = "advisory"
-)
-
+// Check is the unit of validation. Implementations must be pure (no global
+// state) and safe to call concurrently with other Checks. Implementations
+// MUST NOT modify host state.
 type Check interface {
-    ID() string                                                   // stable, machine-readable
+    ID() string                                                   // stable, machine-readable; appears in JSON, SARIF rule IDs, Prometheus labels
     Title() string                                                // ≤80 chars
-    Description() string                                          // SARIF rule.help.text
-    Severity() Severity
+    Description() string                                          // long-form, SARIF rule.help.text
+    Severity() report.Severity
     Applicable(ctx context.Context) (ok bool, reason string)
-    Run(ctx context.Context) Result                               // MUST honor ctx, MUST NOT modify host state
+    Run(ctx context.Context) report.Result                        // MUST honor ctx
 }
 
-type Result struct {
-    CheckID    string         `json:"check_id"`
-    Title      string         `json:"title"`
-    State      State          `json:"state"`
-    Severity   Severity       `json:"severity"`
-    StartedAt  time.Time      `json:"started_at"`
-    DurationMS int64          `json:"duration_ms"`
-    Detail     string         `json:"detail,omitempty"`
-    Evidence   map[string]any `json:"evidence,omitempty"`
-    Err        string         `json:"error,omitempty"`           // present iff State==StateError
-}
-
+// Runner executes a slice of Checks and produces a report.Report.
 type Runner struct {
-    Concurrency int           // 0 = NumCPU
+    Concurrency int           // max parallel checks; 0 = runtime.NumCPU()
     Timeout     time.Duration // per-check; 0 = 30s
     Logger      *slog.Logger  // nil disables
 }
 
+// Run executes the checks and returns the assembled Report. The order of
+// Report.Results is guaranteed to match the order of the input slice
+// (diff-friendly across runs). Cancelling ctx cancels all in-flight checks.
 func (r *Runner) Run(ctx context.Context, checks []Check) report.Report
 ```
 
@@ -190,10 +190,46 @@ func All() []check.Check
 ### Package `report`
 
 ```go
-// Package report defines the canonical Report aggregate and the format
-// constants used by the renderers.
+// Package report defines the canonical Report aggregate, the value types
+// (State, Severity, Result), and the output Format constants. This package
+// imports nothing within this module — it is the leaf of the dependency
+// graph so that check, preset, render and cmd may all import it freely
+// without creating cycles.
 package report
 
+import (
+    "io"
+    "time"
+)
+
+// State is the outcome of running a Check.
+//
+// SARIF mapping (used by the SARIF renderer):
+//
+//	StatePass  → "pass"
+//	StateFail  → "fail"
+//	StateSkip  → "notApplicable"
+//	StateError → "open"          // runtime kind: result not available
+type State string
+
+const (
+    StatePass  State = "pass"
+    StateFail  State = "fail"
+    StateSkip  State = "skip"
+    StateError State = "error"
+)
+
+// Severity classifies the operational meaning of a failed check.
+// A failed Required check produces a non-zero process exit; a failed
+// Advisory check is reported but does not change the exit code.
+type Severity string
+
+const (
+    SeverityRequired Severity = "required"
+    SeverityAdvisory Severity = "advisory"
+)
+
+// Format is one of the supported renderer outputs.
 type Format string
 
 const (
@@ -203,27 +239,41 @@ const (
     FormatPrometheus Format = "prometheus"
 )
 
+// Result is the outcome of one Check execution.
+type Result struct {
+    CheckID    string         `json:"check_id"`
+    Title      string         `json:"title"`
+    State      State          `json:"state"`
+    Severity   Severity       `json:"severity"`
+    StartedAt  time.Time      `json:"started_at"`           // RFC3339 with offset on the wire
+    DurationMS int64          `json:"duration_ms"`
+    Detail     string         `json:"detail,omitempty"`     // operator-readable one-liner
+    Evidence   map[string]any `json:"evidence,omitempty"`   // structured artifacts; see §11 per-check shapes
+    Err        string         `json:"error,omitempty"`      // non-empty iff State == StateError
+}
+
+// Report is the canonical aggregate of a single validator run.
 type Report struct {
-    SchemaVersion string         `json:"schema_version"` // semver of this struct, independent of tool version
-    Tool          ToolInfo       `json:"tool"`
-    Host          HostInfo       `json:"host"`
-    Generated     time.Time      `json:"generated_at"`
-    Results       []check.Result `json:"results"`
-    Summary       Summary        `json:"summary"`
+    SchemaVersion string    `json:"schema_version"` // semver of THIS struct, independent of tool version
+    Tool          ToolInfo  `json:"tool"`
+    Host          HostInfo  `json:"host"`
+    Generated     time.Time `json:"generated_at"`
+    Results       []Result  `json:"results"`        // stable order matching Runner input
+    Summary       Summary   `json:"summary"`
 }
 
 type ToolInfo struct {
     Name      string `json:"name"`
-    Version   string `json:"version"`
-    Commit    string `json:"commit"`
-    BuildDate string `json:"build_date"`
+    Version   string `json:"version"`     // semver, set at build time via -ldflags
+    Commit    string `json:"commit"`      // short git sha
+    BuildDate string `json:"build_date"`  // RFC3339
 }
 
 type HostInfo struct {
     Hostname      string `json:"hostname"`
     KernelRelease string `json:"kernel_release"`
-    OSRelease     string `json:"os_release"`
-    OSVersion     string `json:"os_version_id"`
+    OSRelease     string `json:"os_release"`     // ID from /etc/os-release
+    OSVersion     string `json:"os_version_id"`  // VERSION_ID from /etc/os-release
     Arch          string `json:"arch"`
 }
 
@@ -233,17 +283,22 @@ type Summary struct {
     Fail     int    `json:"fail"`
     Skip     int    `json:"skip"`
     Error    int    `json:"error"`
-    Required Bucket `json:"required"`
+    Required Bucket `json:"required"` // breakdown for required-only outcomes
 }
 
 type Bucket struct {
-    Pass int `json:"pass"`
-    Fail int `json:"fail"`
+    Pass  int `json:"pass"`
+    Fail  int `json:"fail"`
+    Error int `json:"error"`
 }
 
-// WriteTo writes the report to w in the given format.
+// WriteTo writes the report to w in the given format. It satisfies io.WriterTo
+// when called with a fixed format via a closure; the (w, f) signature is kept
+// here for direct CLI use. Implementation lives in internal/render.
 func (rep Report) WriteTo(w io.Writer, f Format) (int64, error)
 ```
+
+**Note on `Bucket`:** Required outcomes track `Pass`, `Fail`, **and** `Error` (added in this revision) so callers can compute the exit code purely from the Summary without re-iterating Results. See §6.
 
 ### CLI flags (cmd/copyfail-validate)
 
@@ -326,15 +381,16 @@ Environment variables (lowest precedence):
 
 | Scenario | State | Why |
 |---|---|---|
-| `algif_aead` in `/proc/modules` | **Fail** | Mitigation requires module not loaded |
-| `/etc/modprobe.d/disable-algif-aead.conf` missing | **Fail** | Required mitigation absent |
-| `modprobe` binary not in `$PATH` | **Error** | Could not perform the check |
-| `rpm -V` shows mtime delta but matching hash | **Pass** with note in evidence | Hash match is what matters |
+| `algif_aead` in `/proc/modules` | **Fail** (required) | Mitigation requires module not loaded |
+| `/etc/modprobe.d/disable-algif-aead.conf` missing | **Fail** (required) | Required mitigation absent |
+| `modprobe` binary not in `$PATH` and check is required | **Error** (required) → contributes to exit code 4 | Could not perform a check we needed to perform; see §6 priority rules |
+| `rpm -V` shows mtime delta but matching hash | **Pass** with mtime delta noted in `Evidence` | Hash match is what matters |
 | `rpm -V` shows hash mismatch | **Fail** (advisory) | Possible binary tamper |
-| `dpkg`-based host hits the `rpm` integrity check | **Skip** with reason | The dpkg sibling check covers it |
-| Non-root user runs `lsof`-based AF_ALG check | **Skip** with `reason="requires root"` | Documented degradation |
-| Check panics due to a bug | **Error** with stack trace logged | Bugs surface loudly, no crash |
-| Check exceeds timeout | **Error** with `Err: "deadline exceeded"` | Operator can raise `--timeout` |
+| Host has neither `rpm` nor `dpkg` (e.g., minimal container, source-built distro) | **Skip** with `reason="no supported package manager detected (rpm, dpkg)"` | The single `integrity.su_binary` check auto-selects a backend in `internal/integrity.Detect()`; Skip when none applies. There are NOT two sibling checks. |
+| Non-root user runs the AF_ALG-active-users check | **Skip** with `reason="requires root to enumerate /proc/<pid>/fd/*"` | Documented degradation; check uses native `/proc` parsing, not `lsof` (see §11) |
+| Check panics due to a bug | **Error** with stack trace logged at slog ERROR | Bugs surface loudly, never crash the binary |
+| Check exceeds `--timeout` | **Error** with `Err: "deadline exceeded"` | Operator can raise `--timeout` |
+| Parent ctx cancelled mid-check (SIGINT/SIGTERM) | **Error** with `Err: "context canceled"`; CLI exits 130/143 | Partial Report still written |
 
 ### Evidence shapes
 
@@ -366,22 +422,57 @@ Environment variables (lowest precedence):
 
 - `report.SchemaVersion` is a separate semver from the tool version.
 - v0.1 ships `"schema_version": "1.0.0"`.
-- Optional fields = no bump. Renaming/removing = major. Required-field additions = minor.
+- Strict semver applied to the JSON wire shape:
+
+  | Change to `report.Report` JSON | Schema bump |
+  |---|---|
+  | Adding a new optional field (`omitempty`, no consumer impact) | Patch |
+  | Adding a new field that consumers SHOULD start emitting/checking but old consumers can ignore | Minor |
+  | Adding a new **required** field (consumers must emit/parse it) | **Major** — breaking change |
+  | Renaming or removing any field | **Major** |
+  | Changing the type of any field (e.g., `int` → `string`) | **Major** |
+  | Tightening a value enum (e.g., dropping a `State` constant) | **Major** |
+  | Adding a new value to an enum (e.g., adding `StateXxx`) | **Minor** — new consumers must handle it, but old consumers see it as an opaque string |
+
 - Documented in `docs/schema.md`; validated in CI against `schemas/report-1.0.0.json`.
+- The schema version is independent of the tool version (§10) — a tool v1.4.2 may still emit schema v1.0.0; bumping the tool to v2.x does NOT automatically bump the schema and vice versa.
+
+### Canonical-JSON form (for `--sign`)
+
+The optional `--sign` flag (§4) writes a SHA-256 digest of the report alongside the report file. To make that digest reproducible across Go versions and minor encoder changes, we serialize the canonical form per [RFC 8785 (JSON Canonicalization Scheme)](https://www.rfc-editor.org/rfc/rfc8785): UTF-8, sorted object keys, no insignificant whitespace, integers without trailing `.0`, escape rules per §3.2 of the RFC. The digest is written as a single line `<sha256-hex>  <filename>` matching `sha256sum`'s output format so operators can verify with stock tools.
 
 ## 6. Error Handling & Exit Codes
 
 ### Exit code contract (frozen at v1.0.0)
 
+The exit code is computed from `Report.Summary.Required` only. Advisory results never affect the exit code.
+
+```
+priority order (first match wins):
+  if usage error (bad flag, parse failure)        → 64
+  if SIGINT received during run                   → 130
+  if SIGTERM received during run                  → 143
+  if tool-level error before any check ran        → 3
+  if Required.Fail   > 0                          → 2     (definitive mitigation gap)
+  if Required.Error  > 0                          → 4     (could not fully validate)
+  otherwise                                       → 0
+```
+
 | Code | Meaning |
 |---|---|
-| **0** | All required checks passed (advisory failures, skips, check-level errors tolerated) |
-| **2** | At least one required check returned `StateFail` |
-| **3** | Tool-level error (cannot read flags, write output, detect host) before any check ran |
-| **4** | Check-level errors only, no required failures — surfaces "we couldn't fully validate" |
-| **64** | Usage error (`EX_USAGE`): bad flag, unknown `--format`, conflicting `--only`/`--skip` |
-| **130** | Interrupted by SIGINT |
-| **143** | Interrupted by SIGTERM |
+| **0** | All required checks returned `StatePass` (advisory `Fail`, advisory/required `Skip`, advisory `Error` are tolerated) |
+| **2** | ≥1 required check returned `StateFail` (host has a definite mitigation gap) |
+| **3** | Tool-level error before any check ran (cannot read flags, write output, detect host info, etc.) |
+| **4** | ≥1 required check returned `StateError` AND no required check returned `StateFail` (we could not fully validate; treat host posture as **Unknown**) |
+| **64** | Usage error (`EX_USAGE` from `sysexits.h`): bad flag, unknown `--format` value, conflicting `--only`/`--skip` |
+| **130** | Interrupted by `SIGINT` (POSIX `128 + 2`) |
+| **143** | Interrupted by `SIGTERM` (POSIX `128 + 15`) |
+
+**Why exit code 2 wins over 4:** a required `Fail` is a known-bad outcome; a required `Error` is a known-unknown. Definitive bad ranks worse than indeterminate. Operators get one clear signal per host: "vulnerable", "unverifiable", or "good".
+
+**Why advisory `Error` doesn't escalate:** an advisory check that errors (e.g., `lsof` not installed for the AF_ALG-active-users check) is no worse than that check being marked `Skip` upfront. The information asymmetry isn't worth the alert noise. Advisory errors still appear in the report and metrics for forensic value.
+
+**Schema correspondence:** these rules are computable from `Summary.Required.{Pass,Fail,Error}` (the `Bucket` type added in §4) plus a sentinel for "tool error before any check ran". This is why `Bucket` was extended in this revision to include `Error` — without it, the CLI couldn't distinguish exit 2 from exit 4 without re-iterating `Results`.
 
 ### Internal error handling philosophy
 
@@ -409,7 +500,24 @@ Environment variables (lowest precedence):
 | Resource exhaustion (subprocess hangs) | Every subprocess under `context.WithTimeout`. SIGTERM, then SIGKILL after 2s. |
 | Output truncation attacks | Captured stdout/stderr bounded to 1 MiB per command. Excess dropped with marker. |
 | Supply chain compromise | See "Supply chain" below. |
-| Sensitive data in output | Hostnames included (necessary). No MAC/machine-id/IP/users unless `--include-host-detail`. `redact()` strips `password\|token\|secret\|bearer` patterns from evidence. |
+| Sensitive data in output | Hostnames included (necessary). No MAC/machine-id/IP/users unless `--include-host-detail`. `internal/redact.Redact()` strips secret-like substrings from any string emitted into `Evidence` or `Detail`. See "Redaction pattern" below for the exact regex; pattern is a single `const RedactionPattern` in `internal/redact/redact.go`. |
+
+### Redaction pattern
+
+`internal/redact.Redact(s string) string` matches the following Go regex (raw-string literal, so backslashes are literal):
+
+```go
+const RedactionPattern = `(?i)(password|passwd|token|secret|bearer|api[_-]?key|aws_(?:access|secret)_key_id?|authorization)\s*[:=]\s*\S+`
+```
+
+Replacement: the entire match is replaced with the keyword followed by `=***REDACTED***` — e.g., `aws_secret_access_key=AKIAIOSFODNN7EXAMPLE` becomes `aws_secret_access_key=***REDACTED***`. The keyword is preserved so operators can see *which* secret was found, just not its value.
+
+Test coverage (in `internal/redact/redact_test.go`):
+
+- **Positive matches**: real-looking AWS access keys, JWT-shaped bearer tokens, `password=...` in connection strings, `Authorization: Bearer ...` headers from captured stderr.
+- **Negative matches** (must NOT redact): the literal word "password" appearing in a sentence ("Reset your password from the portal"), `secrets.yaml` as a filename, "API key documentation" as a description.
+
+The pattern is intentionally tuned for high precision over high recall — false positives in audit output would be more disruptive than the rare missed redaction. CI runs the test suite against a corpus of 100 samples (50 positive, 50 negative) committed to `internal/redact/testdata/`.
 
 ### Out of scope
 
@@ -419,44 +527,81 @@ Environment variables (lowest precedence):
 
 ### `internal/exec` — safe subprocess wrapper
 
+**Scope of defense:** `internal/exec` defends against **shell-injection-class** problems only — preventing arbitrary command execution from untrusted argument values. It explicitly does **not** defend against path-traversal, file-overwrite, or resource-exhaustion outside of its own subprocess timeout. Path-traversal protection is the responsibility of the caller layer that knows the path semantics (e.g., the `--conf` flag handler in `cmd/copyfail-validate` runs `filepath.Clean` and an under-`/etc/modprobe.d/` containment check before passing the path anywhere). This separation of concerns is intentional: the exec wrapper does not have enough context to know whether a slash-containing argument is a legitimate path (good) or a traversal attempt (bad).
+
 ```go
 package exec // internal
 
+// Untrusted is a string from a user-controlled source (flag, env var,
+// subprocess output that will be re-fed to another subprocess). It MUST
+// pass UntrustedArgRE before being placed into a Cmd.Args slot.
+type Untrusted string
+
+// Trusted is a string the caller asserts is safe — typically a constant
+// or a value validated by a domain-specific validator (e.g., a path
+// already cleaned and contained by the --conf flag handler). The exec
+// wrapper passes Trusted values through without character validation.
+type Trusted string
+
+// Arg is the argument-slot type accepted by Cmd.Args. Concrete types are
+// Untrusted and Trusted; new types MUST NOT be added without security review.
+type Arg interface{ argSentinel() }
+
+func (Untrusted) argSentinel() {}
+func (Trusted) argSentinel()   {}
+
 type Cmd struct {
-    Name    string        // logical name, not path
-    Args    []string      // each validated against allowedArgRE
-    Timeout time.Duration // default 30s
-    Env     []string      // default minimal: PATH, LANG=C
+    Name    string        // logical name (not a path); resolved via allowedCommands
+    Args    []Arg         // each Untrusted Arg must match UntrustedArgRE
+    Timeout time.Duration // 0 = 30s default
+    Env     []string      // 0-len = minimal: PATH, LANG=C
 }
 
 type Result struct {
-    Stdout   []byte // bounded to 1 MiB
+    Stdout   []byte // bounded to MaxOutput (1 MiB); excess dropped, marker set in Truncated
     Stderr   []byte
+    Truncated bool
     ExitCode int
-    Path     string // resolved absolute path of executable
+    Path     string // resolved absolute path of the executable that ran
     Duration time.Duration
 }
 
+// allowedCommands maps logical name → preferred absolute path.
+// Lookup falls back to exec.LookPath only if the absolute path is missing.
 var allowedCommands = map[string]string{
     "modprobe": "/sbin/modprobe",
     "lsmod":    "/sbin/lsmod",
     "uname":    "/bin/uname",
     "rpm":      "/usr/bin/rpm",
     "dpkg":     "/usr/bin/dpkg",
+    "dpkg-query": "/usr/bin/dpkg-query",
     "debsums":  "/usr/bin/debsums",
-    "lsof":     "/usr/bin/lsof",
+    "sha256sum": "/usr/bin/sha256sum",
 }
 
-var allowedArgRE = regexp.MustCompile(`^[A-Za-z0-9._\-/+:=,@]*$`)
+// UntrustedArgRE matches the conservative set of characters allowed in an
+// Untrusted argument: alphanumerics, dot, underscore, hyphen, forward
+// slash, plus, colon, equals, comma, at-sign. NOTE: this regex deliberately
+// permits forward slash (because legitimate values include package names
+// and absolute paths) and does NOT block ".." segments — that is the
+// caller's responsibility per the "Scope of defense" note above. Leading
+// "-" is ALSO blocked by a separate check (prevents flag-injection like
+// `--config=/etc/passwd`).
+var UntrustedArgRE = regexp.MustCompile(`^[A-Za-z0-9._\-/+:=,@]+$`)
 
 func (c Cmd) Run(ctx context.Context) (Result, error)
 ```
 
 Properties:
-- **No shell.** Never call `sh`, `bash`, or `system()`.
-- **Allowlisted commands.** Non-allowlisted → `ErrCommandDenied`.
-- **Allowlisted argument character set.** Untrusted input must pass `allowedArgRE`. `Trusted("…")` type bypasses for known-safe values.
-- **Minimal environment.** `LANG=C` for parser determinism. `PATH` for `LookPath`. Nothing else by default.
+- **No shell.** Never call `sh`, `bash`, or `system()`. Period.
+- **Allowlisted commands.** Non-allowlisted `Name` → `ErrCommandDenied`. Note that `lsof` was removed from the allowlist in this revision: the AF_ALG-active-users check now reads `/proc/<pid>/fd/*` directly (see §11), eliminating the only need for `lsof`.
+- **Two-tier argument typing.** `Untrusted` args must pass `UntrustedArgRE` AND must not start with `-` (flag-injection guard). `Trusted` args bypass — typically used for fixed flags like `Trusted("-V")` or paths already validated by the caller. The compiler enforces the distinction at every call site via the `Arg` interface.
+- **Minimal environment.** `LANG=C` for parser determinism. `PATH` for `LookPath`. Nothing else by default; callers may add specific vars but never the entire host env.
+
+**Caller responsibilities** (NOT enforced by `internal/exec`):
+- Path-traversal protection on file paths (use `filepath.Clean` + containment check before passing as `Trusted`).
+- Numeric range checks on values that will be parsed as ints by a subprocess.
+- Domain-specific validation (e.g., RPM package name format, kernel module name format).
 
 ### Supply chain security
 
@@ -696,16 +841,21 @@ E2E job runs separately on `push: main`.
 - CLI binary: `copyfail-validate`.
 - v2+ rule: module path becomes `…/v2` per Go import compatibility.
 
-### Semver discipline
+### Semver discipline (tool version)
 
-| Change | Bump |
+The tool version follows strict semver. The `Report.SchemaVersion` is independent (see §5) — a tool minor bump may or may not coincide with a schema bump.
+
+| Change | Tool bump |
 |---|---|
-| New check in `preset/copyfail` | Patch |
-| New public function/method | Minor |
-| New optional field in `report.Report` | Minor |
-| Removing/renaming exported symbol | Major |
-| Changing exit code semantics | Major |
-| Bumping `Report.SchemaVersion` major | Major |
+| New check in `preset/copyfail` (consumers' fleets simply check more things; no API change) | Patch |
+| New public function/method/type | Minor |
+| Adding a new optional field to `report.Report` (no required change for consumers) | Minor (schema patch — see §5) |
+| Adding a new value to a public enum (e.g., adding `report.StateXxx`) | Minor (schema minor) |
+| Adding a new required field to `report.Report` | **Major** (schema major) |
+| Removing or renaming any exported symbol | **Major** |
+| Changing exit code semantics (codes 0/2/3/4/64/130/143 are frozen at v1.0.0) | **Major** |
+| Bumping `Report.SchemaVersion` major | **Major** |
+| Removing or renaming any check ID from a preset (existing IDs are frozen at v1.0.0) | **Major** |
 
 Hold at `v0.x.y` until at least one external consumer cycle. First public release: **v0.1.0**. First stable: **v1.0.0** after ≥4 weeks at v0.x with no breaking changes.
 
@@ -794,12 +944,56 @@ The `copyfail.All()` bundle ships the following checks for v0.1.0. Each maps 1:1
 | `modprobe.conf_present` | Modprobe blocklist file present | required | always | `/etc/modprobe.d/disable-algif-aead.conf` exists |
 | `modprobe.conf_correct` | Blocklist contains both `install … /bin/false` and `blacklist …` | required | always | Both directives present |
 | `modprobe.dry_run` | `modprobe -n -v` resolves to `/bin/false` | required | requires `modprobe` binary | Confirms runtime block |
+| `modprobe.dependency_chain` | No `install algif_aead /bin/true` or trivial-bypass directive in any `/etc/modprobe.d/*.conf` | required | always | Defense-in-depth — catches an attacker or misconfigured tool that overrode the blocklist with a permissive directive in a file that sorts later alphabetically |
 | `module.not_loaded` | Target module absent from `/proc/modules` | required | always | Parses `/proc/modules` directly (no shell) |
-| `afalg.no_active_users` | No process holds an `AF_ALG` socket | advisory | requires root + `lsof` | Best-effort detection |
-| `integrity.su_binary` | `/usr/bin/su` matches package manager records | advisory | `rpm` or `dpkg` present | Backend auto-selected |
+| `afalg.no_active_users` | No process has an AF_ALG-family kernel module mapped | advisory | requires root to enumerate `/proc/<pid>/maps` for processes other than self | See parser contract below |
+| `integrity.su_binary` | `/usr/bin/su` matches package manager records | advisory | `rpm` OR `dpkg` present (auto-selected via `internal/integrity.Detect()`); Skip when neither is present | Single check, single result row in the report; backend identity recorded in `Evidence["backend"]` |
 | `hostinfo.os_release` | `/etc/os-release` parseable | advisory | always | Populates `host.os_release` / `host.os_version_id` |
 
-The current code's checks 1–6 are preserved (with `module.not_loaded` migrated off `sh -c`). Checks added relative to today's code: `modprobe.conf_present` is split out from `modprobe.conf_correct` for clearer reporting; `kernel.version` and `hostinfo.os_release` become explicit checks rather than implicit fields.
+#### `afalg.no_active_users` — parser contract (no shell, no `lsof`)
+
+The current `copyfail_validator.go` uses `sh -c "lsof | grep -q AF_ALG; echo $?"` — a textbook injection vector AND an unnecessary external dependency. The replacement avoids both, implemented in `internal/procscan`:
+
+**Preconditions:**
+
+- Process EUID is 0 (verified via `os.Geteuid()`). If not, return `StateSkip` with `skipped_reason="requires root to enumerate /proc/<pid>/fd/*"`.
+- `/proc` is mounted (verified via `os.Stat("/proc/self")`). If not, return `StateError` with `Err="/proc not mounted"`.
+
+**Detection algorithm:**
+
+1. List PIDs: `os.ReadDir("/proc")`, filter to entries whose name parses as a positive integer.
+2. For each PID, try to scan its memory map: `os.ReadFile("/proc/<pid>/maps")`.
+   - On `EACCES` → record in `Evidence["unreadable_pids"]`, continue.
+   - On `ENOENT` → process exited mid-scan, ignore silently.
+3. Within the maps file, look for any line whose pathname column contains `algif_aead` (kernel module path) or any of the AF_ALG-family module names (`af_alg`, `algif_skcipher`, `algif_hash`, `algif_rng` — full list in `internal/procscan/afalg.go`).
+4. Read `/proc/<pid>/comm` for matched PIDs to populate the human-readable process name in Evidence.
+
+**Why we don't enumerate AF_ALG sockets directly:** AF_ALG sockets are NOT visible in `/proc/net/tcp`, `/proc/net/unix`, or any other `/proc/net/*` file readable without `CAP_NET_ADMIN`. The kernel's algif accounting is reachable only via netlink queries that require elevated capabilities we deliberately do not request. The maps-based heuristic above is what's actually achievable from userspace as root, and it catches every realistic legitimate consumer (encrypted-filesystem daemons, hardware-offload crypto users) plus any malicious user that has the module mapped.
+
+**Postconditions / state mapping:**
+
+| Result | State |
+|---|---|
+| `candidate_processes` is empty | `StatePass` |
+| `candidate_processes` is non-empty | `StateFail` (advisory severity — flagged for investigation, not necessarily malicious) |
+| `os.Geteuid() != 0` | `StateSkip` |
+| `/proc` not readable | `StateError` |
+
+**Evidence shape:**
+
+```jsonc
+"evidence": {
+  "method": "proc_maps_scan",
+  "scanned_pids": 412,
+  "unreadable_pids": 3,
+  "candidate_processes": [
+    {"pid": 1817, "comm": "encfs", "match_reason": "algif_aead in /proc/1817/maps"}
+  ],
+  "skipped_reason": ""
+}
+```
+
+The current code's checks 1–6 are preserved (with `module.not_loaded` migrated off `sh -c` and `afalg.no_active_users` migrated off the `lsof | grep` shell pipe). Checks added relative to today's code: `modprobe.conf_present` is split out from `modprobe.conf_correct` for clearer reporting; `modprobe.dependency_chain` is new (defense-in-depth against blocklist override); `kernel.version` and `hostinfo.os_release` become explicit checks rather than implicit fields.
 
 ## 12. Open Questions / Future Work
 
