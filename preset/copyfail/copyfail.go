@@ -111,5 +111,6 @@ func AllWithOptions(opts Options) []check.Check {
 		modprobeConfCorrectCheck{confPath: opts.ConfPath, module: opts.Module},
 		modprobeDryRunCheck{module: opts.Module, runner: opts.Runner},
 		modprobeDependencyChainCheck{dir: opts.ModprobeDir, module: opts.Module},
+		moduleNotLoadedCheck{module: opts.Module},
 	}
 }

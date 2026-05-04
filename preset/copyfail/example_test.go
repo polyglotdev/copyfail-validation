@@ -74,7 +74,7 @@ func ExampleAll() {
 	fmt.Println("first check ID:", checks[0].ID())
 	fmt.Println("second check ID:", checks[1].ID())
 	// Output:
-	// required check count: 4
+	// required check count: 5
 	// first check ID: modprobe.conf_present
 	// second check ID: modprobe.conf_correct
 }
@@ -95,6 +95,7 @@ func ExampleAllWithOptions() {
 	// modprobe.conf_correct
 	// modprobe.dry_run
 	// modprobe.dependency_chain
+	// module.not_loaded
 }
 
 // Example_modprobeConfPresent shows the conf-present check on a real
@@ -220,4 +221,35 @@ func Example_modprobeDependencyChain() {
 	// Output:
 	// state: pass
 	// last_install_target: /bin/false
+}
+
+// Example_moduleNotLoaded shows the not-loaded check via the
+// test-only NewModuleNotLoadedCheckForTest constructor. Production
+// callers do NOT use this constructor — they get the check from
+// AllWithOptions and it reads /proc/modules directly. The example
+// uses a synthetic fixture so godoc can verify exact output.
+func Example_moduleNotLoaded() {
+	dir, err := os.MkdirTemp("", "copyfail-example-*")
+	if err != nil {
+		fmt.Println("setup error:", err)
+		return
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+
+	path := filepath.Join(dir, "modules")
+	body := "ext4 753664 1 - Live 0x0\nnvme 53248 4 - Live 0x0\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		fmt.Println("setup error:", err)
+		return
+	}
+
+	runFn := copyfail.NewModuleNotLoadedCheckForTest("algif_aead", path)
+	res := runFn(context.Background())
+	fmt.Println("state:", res.State)
+	fmt.Println("is_loaded:", res.Evidence["is_loaded"])
+	fmt.Println("total_modules:", res.Evidence["total_modules"])
+	// Output:
+	// state: pass
+	// is_loaded: false
+	// total_modules: 2
 }

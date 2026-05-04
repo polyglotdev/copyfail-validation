@@ -28,6 +28,7 @@ var expectedRequiredCheckIDs = []string{
 	"modprobe.conf_correct",
 	"modprobe.dry_run",
 	"modprobe.dependency_chain",
+	"module.not_loaded",
 }
 
 // TestCVEConstantIsCorrect pins the CVE identifier the package
