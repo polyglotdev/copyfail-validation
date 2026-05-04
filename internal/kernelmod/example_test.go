@@ -67,3 +67,93 @@ func ExampleIsLoaded() {
 	// false
 	// false
 }
+
+// ExampleParseConfReader shows the in-memory parser variant — useful
+// when the conf content arrives over the network or from an embedded
+// fixture. The Source string is recorded verbatim onto every emitted
+// directive's Source field; callers passing real file content should
+// pass the absolute path so audit logs can identify the file later.
+func ExampleParseConfReader() {
+	conf := strings.NewReader(
+		"# disable AF_ALG kernel module\n" +
+			"install algif_aead /bin/false\n" +
+			"blacklist algif_aead\n",
+	)
+
+	directives, err := kernelmod.ParseConfReader(conf, "/etc/modprobe.d/disable-algif-aead.conf")
+	if err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+
+	for _, d := range directives {
+		fmt.Printf("%s %s args=%v line=%d\n", d.Kind, d.Module, d.Args, d.LineNum)
+	}
+	// Output:
+	// install algif_aead args=[/bin/false] line=2
+	// blacklist algif_aead args=[] line=3
+}
+
+// ExampleParseConfReader_continuation shows that a trailing backslash
+// joins the next line into one directive. The reported LineNum points
+// at the FIRST line of the joined block — that is where an operator
+// would edit to change the directive.
+func ExampleParseConfReader_continuation() {
+	conf := strings.NewReader(
+		"options algif_aead \\\n" +
+			"    foo=1 bar=2\n",
+	)
+
+	directives, err := kernelmod.ParseConfReader(conf, "demo.conf")
+	if err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+
+	d := directives[0]
+	fmt.Printf("%s %s args=%v line=%d\n", d.Kind, d.Module, d.Args, d.LineNum)
+	// Output:
+	// options algif_aead args=[foo=1 bar=2] line=1
+}
+
+// ExampleInstallTarget shows the "later wins" semantics that mirror
+// modprobe's conf-file precedence. An "install" directive in a
+// higher-sorting file (or later in the same parse) shadows earlier
+// ones for the same module. The found bool distinguishes "no install
+// directive at all" from "install with empty target" — which is why
+// callers must not just check `target == ""`.
+func ExampleInstallTarget() {
+	directives := []kernelmod.ConfDirective{
+		{Kind: "install", Module: "algif_aead", Args: []string{"/bin/false"}, Source: "00-blacklist.conf", LineNum: 1},
+		{Kind: "install", Module: "algif_aead", Args: []string{"/bin/true"}, Source: "99-override.conf", LineNum: 1},
+		{Kind: "blacklist", Module: "evil_module", Args: []string{}, Source: "00-blacklist.conf", LineNum: 2},
+	}
+
+	target, found := kernelmod.InstallTarget(directives, "algif_aead")
+	fmt.Printf("algif_aead -> target=%q found=%v\n", target, found)
+
+	target, found = kernelmod.InstallTarget(directives, "missing_module")
+	fmt.Printf("missing_module -> target=%q found=%v\n", target, found)
+	// Output:
+	// algif_aead -> target="/bin/true" found=true
+	// missing_module -> target="" found=false
+}
+
+// ExampleIsBlacklisted shows the monotonic semantics: a single
+// blacklist directive ANYWHERE in any file makes the module
+// blacklisted. There is no "un-blacklist" directive in the modprobe.d
+// format, so blacklist precedence does NOT follow "later wins".
+func ExampleIsBlacklisted() {
+	directives := []kernelmod.ConfDirective{
+		{Kind: "install", Module: "algif_aead", Args: []string{"/bin/false"}, Source: "demo.conf", LineNum: 1},
+		{Kind: "blacklist", Module: "algif_aead", Args: []string{}, Source: "demo.conf", LineNum: 2},
+	}
+
+	fmt.Println(kernelmod.IsBlacklisted(directives, "algif_aead"))
+	fmt.Println(kernelmod.IsBlacklisted(directives, "ALGIF_AEAD"))
+	fmt.Println(kernelmod.IsBlacklisted(directives, "not_present"))
+	// Output:
+	// true
+	// false
+	// false
+}
