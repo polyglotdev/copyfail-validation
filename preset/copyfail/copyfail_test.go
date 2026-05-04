@@ -25,6 +25,7 @@ import (
 // this slice — callers matching a tail position depend on the prefix.
 var expectedRequiredCheckIDs = []string{
 	"modprobe.conf_present",
+	"modprobe.conf_correct",
 }
 
 // TestCVEConstantIsCorrect pins the CVE identifier the package

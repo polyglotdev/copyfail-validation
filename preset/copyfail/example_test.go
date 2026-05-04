@@ -66,15 +66,17 @@ func ExampleOptions() {
 
 // ExampleAll shows the canonical caller pattern: invoke All() and
 // inspect the returned slice. The example asserts only on length and
-// the first check ID to keep the output stable as more checks land in
-// subsequent commits.
+// the first two check IDs to keep the output stable as more checks
+// land in subsequent commits.
 func ExampleAll() {
 	checks := copyfail.All()
 	fmt.Println("required check count:", len(checks))
 	fmt.Println("first check ID:", checks[0].ID())
+	fmt.Println("second check ID:", checks[1].ID())
 	// Output:
-	// required check count: 1
+	// required check count: 2
 	// first check ID: modprobe.conf_present
+	// second check ID: modprobe.conf_correct
 }
 
 // ExampleAllWithOptions shows wiring a non-default Module and a
@@ -90,6 +92,7 @@ func ExampleAllWithOptions() {
 	}
 	// Output:
 	// modprobe.conf_present
+	// modprobe.conf_correct
 }
 
 // Example_modprobeConfPresent shows the conf-present check on a real
@@ -123,4 +126,37 @@ func Example_modprobeConfPresent() {
 	// Output:
 	// state: pass
 	// is_regular: true
+}
+
+// Example_modprobeConfCorrect shows the conf-correct check on a
+// blocklist fixture that contains both required directives. The
+// printed Evidence values mirror the spec §11 evidence shape.
+func Example_modprobeConfCorrect() {
+	dir, err := os.MkdirTemp("", "copyfail-example-*")
+	if err != nil {
+		fmt.Println("setup error:", err)
+		return
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+
+	path := filepath.Join(dir, "disable-algif-aead.conf")
+	if err := os.WriteFile(path, []byte("install algif_aead /bin/false\nblacklist algif_aead\n"), 0o600); err != nil {
+		fmt.Println("setup error:", err)
+		return
+	}
+
+	opts := copyfail.Options{ConfPath: path, Runner: &exec.FakeRunner{}}
+	for _, c := range copyfail.AllWithOptions(opts) {
+		if c.ID() != "modprobe.conf_correct" {
+			continue
+		}
+		res := c.Run(context.Background())
+		fmt.Println("state:", res.State)
+		fmt.Println("install_target:", res.Evidence["install_target"])
+		fmt.Println("blacklisted:", res.Evidence["blacklisted"])
+	}
+	// Output:
+	// state: pass
+	// install_target: /bin/false
+	// blacklisted: true
 }
