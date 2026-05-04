@@ -1,0 +1,2 @@
+See the API key documentation at https://example.com/docs/api-keys
+The default api key permissions are read-only
