@@ -26,6 +26,25 @@ func ExampleValidate_trusted() {
 	// ok
 }
 
+// ExampleResolveCommand shows resolving a logical command name to an
+// absolute path. uname is allowlisted on every supported host, so this
+// example does not assert the exact path (which varies by OS) — only
+// that resolution succeeds. A non-allowlisted name (e.g., "rm") would
+// return ErrCommandDenied; a missing binary would return
+// ErrCommandNotFound.
+func ExampleResolveCommand() {
+	path, err := exec.ResolveCommand("uname")
+	if err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+	if path != "" {
+		fmt.Println("resolved")
+	}
+	// Output:
+	// resolved
+}
+
 // ExampleValidate_untrusted shows the two failure modes for Untrusted
 // values: characters outside UntrustedArgRE (here, a space — which is
 // the most common shell-injection vector) and the leading-dash
