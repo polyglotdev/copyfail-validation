@@ -48,6 +48,13 @@ jobs:
           cache: true
       - uses: golangci/golangci-lint-action@v6
         with:
+          # install-mode: goinstall builds golangci-lint from source using
+          # this workflow's Go 1.26.x toolchain. The default binary install
+          # ships a binary that the action's release process built with an
+          # older Go (1.24 as of 2026-05-04) — which then refuses to load
+          # our v2-schema .golangci.yml because the file targets Go 1.26.2.
+          # goinstall is slower (~30s) but immune to Go-version skew.
+          install-mode: goinstall
           version: latest
 
   vuln:

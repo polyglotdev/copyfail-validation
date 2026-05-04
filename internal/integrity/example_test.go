@@ -13,16 +13,23 @@ import (
 )
 
 // ExampleDetect demonstrates the canonical "pick whichever package
-// manager is on this host" flow. On a host without rpm or dpkg the
-// function returns ErrNoPkgManager and the integrity.su_binary check
-// records a Skip with reason="no supported package manager".
+// manager is on this host" flow. The result depends on the host:
 //
-// The example uses a FakeRunner so godoc can verify exact output
-// bytes; production callers wire exec.NewOSRunner from internal/exec.
-// The example output assumes a host with NEITHER rpm nor dpkg in the
-// allowlisted preferred path (e.g., macOS development machines and
-// minimal containers) so godoc renders deterministically across the
-// CI matrix.
+//   - On a host with rpm installed: returns the rpm backend.
+//   - On a host with dpkg but no rpm: returns the dpkg backend.
+//   - On a host with neither (e.g., macOS dev, minimal Alpine): returns
+//     ErrNoPkgManager and the integrity.su_binary check records a Skip
+//     with reason="no supported package manager".
+//
+// The example uses a FakeRunner so production-runner side-effects do
+// not leak into godoc, but Detect itself probes the actual host PATH
+// via internal/exec.ResolveCommand — so the runner argument is unused
+// here. Production callers wire exec.NewOSRunner from internal/exec.
+//
+// No // Output: directive: this example is host-state-dependent (rpm
+// and dpkg are installed on different CI matrix entries), so it is
+// compile-checked but its printed bytes are not pinned. The runtime
+// behavior is verified by TestDetect_* in the internal package tests.
 func ExampleDetect() {
 	pm, err := integrity.Detect(&exec.FakeRunner{})
 	switch {
@@ -33,8 +40,6 @@ func ExampleDetect() {
 	default:
 		fmt.Println("backend:", pm.Name())
 	}
-	// Output:
-	// no package manager: skip integrity check
 }
 
 // ExampleNewRPM shows direct instantiation of the rpm backend without
@@ -189,6 +194,10 @@ func ExampleErrPackageUnknown() {
 // dpkg is on the host; callers should record a Skip rather than an
 // Error in the integrity.su_binary check evidence (spec §5
 // State-Semantics table).
+//
+// No // Output: directive: this example is host-state-dependent
+// (Detect probes the actual host PATH; see ExampleDetect for the
+// rationale). Compile-checked but its printed bytes are not pinned.
 func ExampleErrNoPkgManager() {
 	_, err := integrity.Detect(&exec.FakeRunner{})
 	if errors.Is(err, integrity.ErrNoPkgManager) {
@@ -200,6 +209,4 @@ func ExampleErrNoPkgManager() {
 		return
 	}
 	fmt.Println("backend resolved")
-	// Output:
-	// skip: no supported package manager
 }
