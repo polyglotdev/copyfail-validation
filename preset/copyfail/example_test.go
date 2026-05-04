@@ -4,7 +4,10 @@
 package copyfail_test
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/polyglotdev/copyfail-validation/internal/exec"
 	"github.com/polyglotdev/copyfail-validation/preset/copyfail"
@@ -62,19 +65,21 @@ func ExampleOptions() {
 }
 
 // ExampleAll shows the canonical caller pattern: invoke All() and
-// inspect the returned slice. In the bundler-only commit the slice
-// is empty; subsequent commits add per-check entries and the example
-// will be extended to print them.
+// inspect the returned slice. The example asserts only on length and
+// the first check ID to keep the output stable as more checks land in
+// subsequent commits.
 func ExampleAll() {
 	checks := copyfail.All()
 	fmt.Println("required check count:", len(checks))
-	// Output: required check count: 0
+	fmt.Println("first check ID:", checks[0].ID())
+	// Output:
+	// required check count: 1
+	// first check ID: modprobe.conf_present
 }
 
 // ExampleAllWithOptions shows wiring a non-default Module and a
 // FakeRunner (so the example is hermetic and exercises the
-// configuration plumbing). The empty-slice output is the bundler-only
-// state; each per-check commit grows the printed list.
+// configuration plumbing). The output prints every check ID in order.
 func ExampleAllWithOptions() {
 	checks := copyfail.AllWithOptions(copyfail.Options{
 		Module: "algif_skcipher",
@@ -83,6 +88,39 @@ func ExampleAllWithOptions() {
 	for _, c := range checks {
 		fmt.Println(c.ID())
 	}
-	fmt.Println("done")
-	// Output: done
+	// Output:
+	// modprobe.conf_present
+}
+
+// Example_modprobeConfPresent shows the conf-present check on a real
+// fixture file. The example writes a tiny *.conf inside a temp dir,
+// invokes the check via AllWithOptions, and prints the resulting
+// state — the byte-stable output anchors the godoc explanation of
+// what a passing posture looks like.
+func Example_modprobeConfPresent() {
+	dir, err := os.MkdirTemp("", "copyfail-example-*")
+	if err != nil {
+		fmt.Println("setup error:", err)
+		return
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+
+	path := filepath.Join(dir, "disable-algif-aead.conf")
+	if err := os.WriteFile(path, []byte("install algif_aead /bin/false\nblacklist algif_aead\n"), 0o600); err != nil {
+		fmt.Println("setup error:", err)
+		return
+	}
+
+	opts := copyfail.Options{ConfPath: path, Runner: &exec.FakeRunner{}}
+	for _, c := range copyfail.AllWithOptions(opts) {
+		if c.ID() != "modprobe.conf_present" {
+			continue
+		}
+		res := c.Run(context.Background())
+		fmt.Println("state:", res.State)
+		fmt.Println("is_regular:", res.Evidence["is_regular"])
+	}
+	// Output:
+	// state: pass
+	// is_regular: true
 }

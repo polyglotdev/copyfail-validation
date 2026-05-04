@@ -106,5 +106,7 @@ func AllWithOptions(opts Options) []check.Check {
 		opts.Runner = exec.NewOSRunner()
 	}
 
-	return []check.Check{}
+	return []check.Check{
+		modprobeConfPresentCheck{confPath: opts.ConfPath},
+	}
 }

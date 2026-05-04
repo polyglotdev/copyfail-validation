@@ -23,7 +23,9 @@ import (
 //
 // When v0.1.x adds the four advisory checks, append (do NOT prepend) to
 // this slice — callers matching a tail position depend on the prefix.
-var expectedRequiredCheckIDs = []string{}
+var expectedRequiredCheckIDs = []string{
+	"modprobe.conf_present",
+}
 
 // TestCVEConstantIsCorrect pins the CVE identifier the package
 // validates. The constant feeds into SARIF rule IDs and dashboards
