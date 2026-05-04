@@ -46,6 +46,8 @@ linters:
           deny:
             - pkg: github.com/polyglotdev/copyfail-validation/preset
               desc: "check must not depend on any concrete preset; presets depend on check"
+            - pkg: github.com/polyglotdev/copyfail-validation/internal
+              desc: "check must not depend on internal/* packages; check is pure interface + Runner"
             - pkg: github.com/polyglotdev/copyfail-validation/cmd
               desc: "check must not depend on the CLI"
     gosec:
