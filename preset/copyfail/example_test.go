@@ -74,7 +74,7 @@ func ExampleAll() {
 	fmt.Println("first check ID:", checks[0].ID())
 	fmt.Println("second check ID:", checks[1].ID())
 	// Output:
-	// required check count: 3
+	// required check count: 4
 	// first check ID: modprobe.conf_present
 	// second check ID: modprobe.conf_correct
 }
@@ -94,6 +94,7 @@ func ExampleAllWithOptions() {
 	// modprobe.conf_present
 	// modprobe.conf_correct
 	// modprobe.dry_run
+	// modprobe.dependency_chain
 }
 
 // Example_modprobeConfPresent shows the conf-present check on a real
@@ -187,4 +188,36 @@ func Example_modprobeDryRun() {
 	// state: pass
 	// blocked: true
 	// resolved_to: install /bin/false
+}
+
+// Example_modprobeDependencyChain shows the dependency-chain check on
+// a single-file directory: the canonical 00-blacklist.conf with a
+// /bin/false target. Because no later-sorting file overrides the
+// install directive, the check passes.
+func Example_modprobeDependencyChain() {
+	dir, err := os.MkdirTemp("", "copyfail-example-*")
+	if err != nil {
+		fmt.Println("setup error:", err)
+		return
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+
+	if err := os.WriteFile(filepath.Join(dir, "00-blacklist.conf"),
+		[]byte("install algif_aead /bin/false\nblacklist algif_aead\n"), 0o600); err != nil {
+		fmt.Println("setup error:", err)
+		return
+	}
+
+	opts := copyfail.Options{ModprobeDir: dir, Runner: &exec.FakeRunner{}}
+	for _, c := range copyfail.AllWithOptions(opts) {
+		if c.ID() != "modprobe.dependency_chain" {
+			continue
+		}
+		res := c.Run(context.Background())
+		fmt.Println("state:", res.State)
+		fmt.Println("last_install_target:", res.Evidence["last_install_target"])
+	}
+	// Output:
+	// state: pass
+	// last_install_target: /bin/false
 }
