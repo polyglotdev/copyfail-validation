@@ -2,4 +2,4 @@ module github.com/polyglotdev/copyfail-validation
 
 go 1.26.2
 
-require github.com/google/go-cmp v0.7.0 // indirect
+require github.com/google/go-cmp v0.7.0
