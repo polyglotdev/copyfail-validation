@@ -46,20 +46,16 @@ jobs:
         with:
           go-version: "1.26.x"
           cache: true
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v7
         with:
           # Pin the exact version we use locally so the config schema and
           # the linter rule set are byte-identical between dev and CI.
           #
-          # Why pinned (not "latest"):
-          #   - "latest" with the default binary install resolved to v1.64.8
-          #     (built with Go 1.24, refused our Go-1.26.2 module).
-          #   - "latest" with install-mode: goinstall resolved to the latest
-          #     v1.x release because v2.x lives at the /v2 import path
-          #     (Go semantic-import-versioning rule for v2+).
-          # Pinning v2.11.4 sidesteps both issues: it is a v2-schema-aware
-          # build compiled with Go 1.26.x, downloaded directly from the
-          # GitHub releases page.
+          # Action v7 is required for golangci-lint v2 — v6 hard-rejects
+          # any v2.x version with "golangci-lint v2 is not supported by
+          # golangci-lint-action v6, you must update to v7". v6's default
+          # also ships golangci-lint v1.64.8 (Go-1.24 build), which
+          # refuses to load a Go-1.26.2 module's config.
           version: v2.11.4
 
   vuln:
