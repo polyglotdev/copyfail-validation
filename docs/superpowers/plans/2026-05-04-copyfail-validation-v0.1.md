@@ -3473,17 +3473,19 @@ func TestCLI_SIGTERM_Exits143_PartialReportValid(t *testing.T) { ... }
 - [ ] Step 4: `copyfail-validate --format=json` (full bundle) on the dev host produces a complete, parseable JSON report; if any required check returns Error or Fail, investigate before deleting the legacy file in 6.4.
 - [ ] Step 5: No commit (verification only).
 
-#### Task 6.4: Delete the legacy copyfail_validator.go 🚀 RELEASE BLOCKER
+#### Task 6.4: Delete the legacy copyfail_validator.go.legacy 🚀 RELEASE BLOCKER
 
 > **PRECONDITION:** Task 6.3 must have passed completely. If 6.3 reported any required-check Fail or any Error, do NOT proceed — fix the implementation first. The legacy prototype is the rollback path.
 
-**Files (delete):** `copyfail_validator.go`
+> **NAME NOTE:** The file was renamed early in Phase 1 from `copyfail_validator.go` to `copyfail_validator.go.legacy` to silence IDE diagnostics (the `.go.legacy` extension is not parsed as Go). Reference content is unchanged.
 
-**Acceptance:** `git ls-files | grep '^copyfail_validator.go$'` returns empty after the commit.
+**Files (delete):** `copyfail_validator.go.legacy`
+
+**Acceptance:** `ls copyfail_validator.go*` returns empty after the rm.
 
 - [ ] Step 1: Re-confirm 6.3 passed (re-run if more than a few hours have elapsed or any new commits have landed).
-- [ ] Step 2: Compare-output sanity check: run the legacy script (`go run copyfail_validator.go`) and the new CLI (`./dist/copyfail-validate`) side-by-side on the dev host; verify the new CLI's results are a strict superset of the legacy output (extra checks: `modprobe.dependency_chain`, `hostinfo.os_release`).
-- [ ] Step 3: `git rm copyfail_validator.go`
+- [ ] Step 2: Compare-output sanity check: temporarily rename `copyfail_validator.go.legacy` back to `.go`, run `go run copyfail_validator.go` and the new CLI (`./dist/copyfail-validate`) side-by-side on the dev host; verify the new CLI's results are a strict superset of the legacy output (extra checks: `modprobe.dependency_chain`, `hostinfo.os_release`); rename back to `.legacy` after.
+- [ ] Step 3: `rm copyfail_validator.go.legacy` (file was never tracked in git, so `git rm` is not appropriate; just `rm`).
 - [ ] Step 4: Commit `refactor: remove legacy copyfail_validator.go monolith
 
 The new preset/copyfail bundle (9 checks) covers everything the legacy

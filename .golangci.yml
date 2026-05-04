@@ -83,14 +83,6 @@ linters:
     unparam:
       check-exported: true
 
-  # The legacy single-file validator at module root is slated for deletion in
-  # Phase 6 (Task 6.4) once the structured implementation lands. It is excluded
-  # from lint here so the Phase 0 baseline is green; the exclusion entry is
-  # removed in Task 6.4 along with the file.
-  exclusions:
-    paths:
-      - "^copyfail_validator\\.go$"
-
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
