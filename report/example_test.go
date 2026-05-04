@@ -127,7 +127,15 @@ func ExampleReport_WriteTo_unregisteredRenderer() {
 // in-tree consumers (typically internal/render). This pattern lets the
 // report package stay a leaf in the dependency graph: it owns the
 // registry but knows nothing about any concrete renderer.
+//
+// Production code (internal/render's init) calls Register exactly once
+// per Format. Tests should use SnapshotRenderers + RestoreRenderers
+// (see ExampleSnapshotRenderers) to avoid leaving the registry mutated
+// for the rest of the test binary.
 func ExampleRegister() {
+	prev := report.SnapshotRenderers()
+	defer report.RestoreRenderers(prev)
+
 	const customFormat report.Format = "json"
 	report.Register(customFormat, func(w io.Writer, rep report.Report) (int64, error) {
 		b, err := json.Marshal(rep)
@@ -150,4 +158,23 @@ func ExampleRegister() {
 	fmt.Println("wrote", buf.Len(), "bytes of JSON")
 	// Output:
 	// wrote 327 bytes of JSON
+}
+
+// ExampleSnapshotRenderers shows the canonical isolation pattern for
+// tests that need to register a temporary renderer: snapshot before,
+// restore via t.Cleanup (or defer in this example) after. Without this,
+// the test would silently overwrite a real renderer for the rest of
+// the test binary's lifetime, breaking unrelated downstream tests.
+func ExampleSnapshotRenderers() {
+	// Save current state.
+	prev := report.SnapshotRenderers()
+	defer report.RestoreRenderers(prev)
+
+	// Install a stub for the duration of this scope.
+	report.Register(report.FormatHuman, func(_ io.Writer, _ report.Report) (int64, error) {
+		return 0, nil
+	})
+	fmt.Println("renderer installed; will be removed by defer")
+	// Output:
+	// renderer installed; will be removed by defer
 }

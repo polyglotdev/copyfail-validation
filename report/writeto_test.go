@@ -65,11 +65,15 @@ func TestReport_WriteTo_FormatErrors(t *testing.T) {
 // to it and returns the bytes-written + error from the renderer.
 //
 // Deliberately does not call t.Parallel(): it mutates the package-level
-// renderer registry by calling Register, and the registry has no
-// Unregister. Running it sequentially (and using a Format key that the
-// FormatErrors test does not touch) keeps the two tests independent for
-// the lifetime of the test binary.
+// renderer registry. The Snapshot/Restore pattern (added explicitly to
+// support this kind of test) keeps the registry isolated for the rest
+// of the test binary's lifetime — without it, a real Phase 4 renderer
+// registered via internal/render's init() would be silently overwritten
+// here and stay broken for every subsequent test.
 func TestReport_WriteTo_RegisteredRendererIsInvoked(t *testing.T) {
+	prev := report.SnapshotRenderers()
+	t.Cleanup(func() { report.RestoreRenderers(prev) })
+
 	const payload = "payload"
 	called := false
 	report.Register(report.FormatPrometheus, func(w io.Writer, _ report.Report) (int64, error) {
@@ -91,5 +95,47 @@ func TestReport_WriteTo_RegisteredRendererIsInvoked(t *testing.T) {
 	}
 	if n != int64(len(payload)) {
 		t.Errorf("n = %d, want %d", n, len(payload))
+	}
+}
+
+// TestSnapshotAndRestoreRenderers verifies the registry-isolation
+// helpers in their own right: a Snapshot taken before a Register is
+// untouched by subsequent registry mutations, and Restore replaces the
+// live registry with the snapshot's contents (including by removing
+// any renderer the snapshot did not contain).
+func TestSnapshotAndRestoreRenderers(t *testing.T) {
+	prev := report.SnapshotRenderers()
+	t.Cleanup(func() { report.RestoreRenderers(prev) })
+
+	// Start from a clean slate so this test is independent of the
+	// surrounding test order.
+	report.RestoreRenderers(map[report.Format]report.Renderer{})
+
+	noopBefore := func(_ io.Writer, _ report.Report) (int64, error) { return 0, nil }
+	report.Register(report.FormatJSON, noopBefore)
+
+	snap := report.SnapshotRenderers()
+	if _, ok := snap[report.FormatJSON]; !ok {
+		t.Fatal("snapshot did not capture FormatJSON registration")
+	}
+
+	// Mutate the live registry AFTER the snapshot.
+	report.Register(report.FormatHuman, noopBefore)
+
+	if _, ok := snap[report.FormatHuman]; ok {
+		t.Error("snapshot must be a copy; later mutation leaked into it")
+	}
+
+	report.RestoreRenderers(snap)
+
+	// After restore, FormatJSON is present (was in the snapshot) but
+	// FormatHuman is not (was added after the snapshot).
+	var rep report.Report
+	var buf bytes.Buffer
+	if _, err := rep.WriteTo(&buf, report.FormatJSON); err != nil {
+		t.Errorf("WriteTo(FormatJSON) after restore: %v", err)
+	}
+	if _, err := rep.WriteTo(&buf, report.FormatHuman); err == nil {
+		t.Error("WriteTo(FormatHuman) after restore: expected ErrRendererNotRegistered, got nil")
 	}
 }
